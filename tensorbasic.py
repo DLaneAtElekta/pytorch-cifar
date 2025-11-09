@@ -32,24 +32,32 @@ class TensorBASICError(Exception):
     pass
 
 
-def create_tensor(data, dtype=None):
+def create_tensor(data, dtype=None, requires_grad=False):
     """Create a tensor using the active backend"""
     if BACKEND == 'torch':
         if dtype is None:
             dtype = torch.float32
-        return torch.tensor(data, dtype=dtype)
+        return torch.tensor(data, dtype=dtype, requires_grad=requires_grad)
     else:
         if dtype is None:
             dtype = np.float32
         return np.array(data, dtype=dtype)
 
 
-def zeros_tensor(shape):
+def zeros_tensor(shape, requires_grad=False):
     """Create a zero tensor using the active backend"""
     if BACKEND == 'torch':
-        return torch.zeros(shape)
+        return torch.zeros(shape, requires_grad=requires_grad)
     else:
         return np.zeros(shape, dtype=np.float32)
+
+
+def randn_tensor(shape, requires_grad=False):
+    """Create a random normal tensor using the active backend"""
+    if BACKEND == 'torch':
+        return torch.randn(shape, requires_grad=requires_grad)
+    else:
+        return np.random.randn(*shape).astype(np.float32)
 
 
 def is_tensor(obj):
@@ -481,6 +489,40 @@ class TensorBASICInterpreter:
         if expr.startswith('['):
             return self._parse_tensor_literal(expr)
 
+        # Function call (e.g., randn(2,3), zeros(2,3))
+        func_match = re.match(r'(\w+)\(([^)]*)\)', expr)
+        if func_match and func_match.group(1) not in self.state.variables:
+            return self._eval_function_call(func_match.group(1), func_match.group(2))
+
+        # Property access (e.g., w.grad)
+        prop_match = re.match(r'(\w+)\.(\w+)$', expr)
+        if prop_match:
+            var_name = prop_match.group(1)
+            prop_name = prop_match.group(2)
+            if var_name in self.state.variables:
+                obj = self.state.variables[var_name]
+                if hasattr(obj, prop_name):
+                    return getattr(obj, prop_name)
+                raise TensorBASICError(f"Property {prop_name} not found on {var_name}")
+
+        # Method call (e.g., loss.backward(), w.zero_grad())
+        method_match = re.match(r'(\w+)\.(\w+)\(([^)]*)\)', expr)
+        if method_match:
+            var_name = method_match.group(1)
+            method_name = method_match.group(2)
+            args_str = method_match.group(3)
+            if var_name in self.state.variables:
+                obj = self.state.variables[var_name]
+                if hasattr(obj, method_name):
+                    method = getattr(obj, method_name)
+                    # Parse arguments
+                    if args_str.strip():
+                        args = [self._eval_expr(arg.strip()) for arg in args_str.split(',')]
+                        return method(*args)
+                    else:
+                        return method()
+                raise TensorBASICError(f"Method {method_name} not found on {var_name}")
+
         # Variable or numeric
         try:
             # Try numeric
@@ -544,6 +586,53 @@ class TensorBASICInterpreter:
                 result.append(int(part))
 
         return tuple(result) if len(result) > 1 else result[0]
+
+    def _eval_function_call(self, func_name: str, args_str: str) -> Any:
+        """Evaluate a function call"""
+        # Parse arguments
+        if args_str.strip():
+            args = [self._eval_expr(arg.strip()) for arg in args_str.split(',')]
+        else:
+            args = []
+
+        # Built-in tensor creation functions
+        if func_name == 'zeros':
+            if len(args) < 1:
+                raise TensorBASICError("zeros() requires at least 1 argument")
+            shape = tuple(args) if len(args) > 1 else (args[0],)
+            return zeros_tensor(shape)
+
+        elif func_name == 'randn':
+            if len(args) < 1:
+                raise TensorBASICError("randn() requires at least 1 argument")
+            shape = tuple(args) if len(args) > 1 else (args[0],)
+            return randn_tensor(shape)
+
+        elif func_name == 'tensor':
+            if len(args) < 1:
+                raise TensorBASICError("tensor() requires at least 1 argument")
+            return create_tensor(args[0])
+
+        elif func_name == 'param':
+            # Create a parameter tensor (requires_grad=True)
+            if len(args) < 1:
+                raise TensorBASICError("param() requires at least 1 argument")
+            shape = tuple(args) if len(args) > 1 else (args[0],)
+            return randn_tensor(shape, requires_grad=True)
+
+        elif func_name == 'detach':
+            # Detach a tensor from computation graph and enable requires_grad
+            if len(args) != 1:
+                raise TensorBASICError("detach() requires exactly 1 argument")
+            if BACKEND == 'torch':
+                detached = args[0].detach()
+                detached.requires_grad = True
+                return detached
+            else:
+                return args[0]
+
+        else:
+            raise TensorBASICError(f"Unknown function: {func_name}")
 
     def _save_checkpoint(self):
         """Save current execution state"""

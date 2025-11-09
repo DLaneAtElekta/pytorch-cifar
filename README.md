@@ -273,13 +273,30 @@ python tensorbasic.py long_computation.bas --resume
 - **Execution Engine**: Interprets statements with program counter
 - **State Management**: Handles variables, stack, and checkpoints
 - **Tensor Backend**: PyTorch for array operations
+- **Gradient Operations**: Automatic differentiation via PyTorch autograd
+
+### Gradient/Autograd Support
+
+tensorBASIC now supports automatic differentiation for training ML models:
+
+- **Parameter Creation**: `param()` function creates trainable tensors
+- **Backpropagation**: `.backward()` computes gradients automatically
+- **Gradient Access**: `.grad` property accesses computed gradients
+- **Parameter Updates**: `detach()` function for gradient descent updates
+- **Method Calls**: Call any PyTorch tensor method (e.g., `.mean()`, `.sum()`)
+- **Property Access**: Access any tensor property (e.g., `.grad`, `.data`)
+
+See `examples/GRADIENT_EXAMPLES.md` for detailed documentation and `examples/linear_regression.bas` for a complete training example.
 
 ## Future Enhancements
 
 Potential features for future development:
 
+- [x] Gradient operations and autograd support
 - [ ] More tensor operations (reshape, transpose, etc.)
 - [ ] Built-in functions (sin, cos, exp, log, etc.)
+- [ ] Built-in activation functions (sigmoid, relu, tanh, etc.)
+- [ ] Optimizer implementations (SGD, Adam, etc.)
 - [ ] String operations
 - [ ] File I/O
 - [ ] INPUT statement for user input
